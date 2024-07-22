@@ -1390,6 +1390,20 @@ Instruction *InstCombinerImpl::foldICmpWithDominatingICmp(ICmpInst &Cmp) {
                m_ICmp(DomPred, m_Specific(X), m_APInt(DomC))))
       continue;
 
+    // When > 1 BranchInst, satisfy conditions.
+    if (DC.conditionsFor(X).size() > 1) {
+      // Select among multiple, not just the 1st.
+      // Condition check to select BranchInst:
+      // 1. If CmpBB has only predecessor,
+      // 2. If CmpBB is either TrueBB or FalseBB of this BranchInst BB.
+      // ?? If selected BranchInst doesn't satisfy conditions ?
+      if (Cmp.getParent()->getSinglePredecessor()) {
+        if (!((Cmp.getParent() == BI->getSuccessor(0)) ||
+              (Cmp.getParent() == BI->getSuccessor(1))) )
+          continue;
+      }
+    }
+
     BasicBlockEdge Edge0(BI->getParent(), BI->getSuccessor(0));
     if (DT.dominates(Edge0, Cmp.getParent())) {
       if (auto *V = handleDomCond(DomPred, DomC))
