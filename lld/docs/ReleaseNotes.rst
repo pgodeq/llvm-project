@@ -1,3 +1,6 @@
+.. If you want to modify sections/contents permanently, you should modify both
+   ReleaseNotes.rst and ReleaseNotesTemplate.txt.
+
 ===========================
 lld |release| Release Notes
 ===========================
@@ -26,72 +29,36 @@ Non-comprehensive list of changes in this release
 ELF Improvements
 ----------------
 
-* ``EI_OSABI`` in the output is now inferred from input object files.
-  (`#97144 <https://github.com/llvm/llvm-project/pull/97144>`_)
-* ``--compress-sections <section-glib>={none,zlib,zstd}[:level]`` is added to compress
-  matched output sections without the ``SHF_ALLOC`` flag.
-  (`#84855 <https://github.com/llvm/llvm-project/pull/84855>`_)
-  (`#90567 <https://github.com/llvm/llvm-project/pull/90567>`_)
-* The default compression level for zlib is now independent of linker
-  optimization level (``Z_BEST_SPEED``).
-* zstd compression parallelism no longer requires ``ZSTD_MULITHREAD`` build.
-* ``GNU_PROPERTY_AARCH64_FEATURE_PAUTH`` notes, ``R_AARCH64_AUTH_ABS64`` and
-  ``R_AARCH64_AUTH_RELATIVE`` relocations are now supported.
-  (`#72714 <https://github.com/llvm/llvm-project/pull/72714>`_)
-* ``--no-allow-shlib-undefined`` now rejects non-exported definitions in the
-  ``def-hidden.so ref.so`` case.
-  (`#86777 <https://github.com/llvm/llvm-project/issues/86777>`_)
-* ``--debug-names`` is added to create a merged ``.debug_names`` index
-  from input ``.debug_names`` sections. Type units are not handled yet.
-  (`#86508 <https://github.com/llvm/llvm-project/pull/86508>`_)
-* ``--enable-non-contiguous-regions`` option allows automatically packing input
-  sections into memory regions by automatically spilling to later matches if a
-  region would overflow. This reduces the toil of manually packing regions
-  (typical for embedded). It also makes full LTO feasible in such cases, since
-  IR merging currently prevents the linker script from referring to input
-  files. (`#90007 <https://github.com/llvm/llvm-project/pull/90007>`_)
-* ``--default-script`/``-dT`` is implemented to specify a default script that is processed
-  if ``--script``/``-T`` is not specified.
-  (`#89327 <https://github.com/llvm/llvm-project/pull/89327>`_)
-* ``--force-group-allocation`` is implemented to discard ``SHT_GROUP`` sections
-  and combine relocation sections if their relocated section group members are
-  placed to the same output section.
-  (`#94704 <https://github.com/llvm/llvm-project/pull/94704>`_)
-* ``--build-id`` now defaults to generating a 20-byte digest ("sha1") instead
-  of 8-byte ("fast"). This improves compatibility with RPM packaging tools.
-  (`#93943 <https://github.com/llvm/llvm-project/pull/93943>`_)
-* ``-z lrodata-after-bss`` is implemented to place ``.lrodata`` after ``.bss``.
-  (`#81224 <https://github.com/llvm/llvm-project/pull/81224>`_)
-* ``--export-dynamic`` no longer creates dynamic sections for ``-no-pie`` static linking.
-* ``--lto-emit-asm`` is now added as the canonical spelling of ``--plugin-opt=emit-llvm``.
-* ``--lto-emit-llvm`` now uses the pre-codegen module.
-  (`#97480 <https://github.com/llvm/llvm-project/pull/97480>`_)
-* When AArch64 PAuth is enabled, ``-z pack-relative-relocs`` now encodes ``R_AARCH64_AUTH_RELATIVE`` relocations in ``.rela.auth.dyn``.
-  (`#96496 <https://github.com/llvm/llvm-project/pull/96496>`_)
-* ``-z gcs`` and ``-z gcs-report`` are now supported for AArch64 Guarded Control Stack extension.
-* ``-r`` now forces ``-Bstatic``.
-* Thumb2 PLT is now supported for Cortex-M processors.
-  (`#93644 <https://github.com/llvm/llvm-project/pull/93644>`_)
-* ``DW_EH_sdata4`` of addresses larger than 0x80000000 is now supported for MIPS32.
-  (`#92438 <https://github.com/llvm/llvm-project/pull/92438>`_)
-* Certain unknown section types are rejected.
-  (`#85173 <https://github.com/llvm/llvm-project/pull/85173>`_)
-* ``PROVIDE(lhs = rhs) PROVIDE(rhs = ...)``, ``lhs`` is now defined only if ``rhs`` is needed.
-  (`#74771 <https://github.com/llvm/llvm-project/issues/74771>`_)
-  (`#87530 <https://github.com/llvm/llvm-project/pull/87530>`_)
-* ``OUTPUT_FORMAT(binary)`` is now supported.
-  (`#98837 <https://github.com/llvm/llvm-project/pull/98837>`_)
-* ``NOCROSSREFS`` and ``NOCRFOSSREFS_TO`` commands now supported to prohibit
-  cross references between certain output sections.
-  (`#98773 <https://github.com/llvm/llvm-project/pull/98773>`_)
-* Orphan placement is refined to prefer the last similar section when its rank <= orphan's rank.
-  (`#94099 <https://github.com/llvm/llvm-project/pull/94099>`_)
-  Non-alloc orphan sections are now placed at the end.
-  (`#94519 <https://github.com/llvm/llvm-project/pull/94519>`_)
-* R_X86_64_REX_GOTPCRELX of the addq form is no longer incorrectly optimized when the address is larger than 0x80000000.
+* Added ``--bp-compression-sort-section=<glob>[=<layout_priority>[=<match_priority>]]``,
+  replacing the old coarse ``--bp-compression-sort`` modes with a way to split
+  input sections into multiple compression groups, run balanced partitioning
+  independently per group, and leave out sections that are poor candidates for
+  BP.
+  ``layout_priority`` controls group placement order (lower value = placed
+  first, default 0). ``match_priority`` resolves conflicts when multiple globs
+  match the same section (lower value = higher priority; explicit priority
+  beats positional last-match-wins; default: positional). In ELF, the glob
+  matches input section names (e.g. ``.text.unlikely.code1``).
+
+* When a ``SECTIONS`` command interleaves relro and non-relro sections, lld now
+  emits one ``PT_GNU_RELRO`` segment per contiguous run of relro sections
+  instead of reporting a ``not contiguous with other relro sections`` error.
 
 Breaking changes
 ----------------
+
+* The symbol partition feature has been removed. lld no longer recognizes
+  ``SHT_LLVM_SYMPART`` sections, which are now treated as ordinary sections. The
+  feature saw no adoption beyond a Chromium experiment that has since been
+  retired.
+
+* An OutputSection that has an address expression, and is also assigned
+  to a MEMORY region, will now use the address expression in preference
+  to the next available location in the MEMORY region. This brings LLD
+  in line with GNU ld, but is a change in behavior from previous LLD
+  releases.
+  
+* The default extension for time trace files is now ``.time-trace.json``.
 
 COFF Improvements
 -----------------
@@ -99,8 +66,20 @@ COFF Improvements
 MinGW Improvements
 ------------------
 
+* Added ``--push-state`` and ``--pop-state``, offering the same semantics as
+  when used with the ELF linker: The state of ``--Bstatic``/``--Bdynamic`` and
+  ``--whole-archive`` are pushed onto a stack and popped from it.
+
 MachO Improvements
 ------------------
+
+* ``--bp-compression-sort-section`` now accepts optional layout and match
+  priorities (same syntax as ELF). In Mach-O, the glob matches the
+  concatenated segment+section name (e.g. ``__TEXT__text``).
+* Restructure thunk generation algorithm to be more efficiently create thunks
+  (`#193367 <https://github.com/llvm/llvm-project/pull/193367>`_)
+* Alphabetically sort LC_LINKER_OPTIONS before processing to match Apple linker behavior
+  (`#201604 https://github.com/llvm/llvm-project/pull/201604`)
 
 WebAssembly Improvements
 ------------------------
