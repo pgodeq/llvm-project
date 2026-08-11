@@ -1,12 +1,14 @@
 # -*- Python -*-
 
 import os
+import random
 
 import lit.formats
 import lit.util
 
 from lit.llvm import llvm_config
 from lit.llvm.subst import ToolSubst
+import platform
 
 config.name = "ORC-RT"
 config.test_format = lit.formats.ShTest()
@@ -21,7 +23,7 @@ test_tools_dir = os.path.join(config.orc_rt_obj_root, "test", "tools")
 
 llvm_config.with_environment(
     "PATH",
-    os.path.join(config.orc_rt_obj_root, "tools", "orc-executor"),
+    os.path.join(config.orc_rt_obj_root, "tools", "ogre"),
     append_path=True)
 llvm_config.with_environment("PATH", test_tools_dir, append_path=True)
 
@@ -59,10 +61,32 @@ def add_logging_features():
     for level in levels.split():
         config.available_features.add("orc-rt-log-level-" + level.lower())
 
-
 add_logging_features()
+
+# The os_log delivery tests scrape the unified log (via `log show`), which is
+# slow and timing-sensitive, so they are opt-in: pass --param run-os-log-tests=1
+# to enable them. They also need the `log` tool. Warn if the tests were
+# requested but `log` is unavailable, so the request doesn't silently no-op.
+if lit_config.params.get("run-os-log-tests"):
+    if lit.util.which("log"):
+        config.available_features.add("os-log-show-tests")
+        # A per-invocation id (stable across ALLOW_RETRIES) that the delivery
+        # test emits and matches, so it can't match a stale record from an
+        # earlier run.
+        config.substitutions.append(
+            ("%{orc-rt-log-uid}", str(random.randint(1, 2**31 - 1)))
+        )
+    else:
+        lit_config.warning(
+            "run-os-log-tests was requested, but the 'log' tool was not found; "
+            "the os_log delivery tests will be skipped"
+        )
 
 # Give logging tests a deterministic baseline: clear any logging environment
 # inherited from the developer's shell. Tests opt in with `env ORC_RT_LOG=...`.
 for var in ("ORC_RT_LOG", "ORC_RT_LOG_OUTPUT"):
     config.environment.pop(var, None)
+
+if platform.system() == "Darwin":
+    config.substitutions.append(("%macos-product-version", platform.mac_ver()[0]))
+config.substitutions.append(("%target_triple", config.target_triple))
